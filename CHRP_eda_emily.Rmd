@@ -1,0 +1,160 @@
+---
+title: "CHRP_EDA"
+author: "Emily Wang"
+date: "4/9/2020"
+output: html_document
+runtime: shiny
+---
+
+
+```{r message=FALSE, warning=FALSE}
+# I have no idea what i'm doing
+library(xts)
+library(lubridate)
+library(astsa)
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+setwd("C:/Users/emily/github/CHRP") #Set current working directory
+datadir<-"data/" #Data subfolder, if needed
+```
+
+```{r data import, include=FALSE}
+countypop<-read.csv(paste0(datadir,"co-est2019-alldata.csv"))
+US_c<-read.csv(paste0(datadir,"time_series_covid19_confirmed_US.csv"))
+US_d<-read.csv(paste0(datadir,"time_series_covid19_deaths_US.csv"))
+UID_lookup<-read.csv(paste0(datadir,"UID_ISO_FIPS_LookUp_Table.csv"))
+TX_c<-read.csv(paste0(datadir,"TXcounties_cases.csv"))
+TX_d<-read.csv(paste0(datadir,"TXcounties_fatalities.csv"))
+```
+
+https://www.arcgis.com/apps/opsdashboard/index.html#/bda7594740fd40299423467b48e9ecf6
+https://github.com/CSSEGISandData/COVID-19
+
+
+TX Demographics data: https://demographics.texas.gov/Data/TPEPP/Estimates/
+TX case data: https://dshs.texas.gov/coronavirus/
+
+```{r preprocessing, include=FALSE}
+colnames(TX_c)[1]<-"CountyName"
+colnames(TX_d)[1]<-"CountyName"
+numc<-dim(TX_c)[2]
+counties<-TX_c$CountyName
+TX_c<-t(TX_c[3:(numc)])
+colnames(TX_c)<-counties
+
+numd<-dim(TX_d)[2]
+TX_d<-t(TX_d[3:(numd)])
+colnames(TX_d)<-counties
+
+datesc<-ymd("2020-03-04")+days(c(0:2,5:9,11:34))
+datesd<-ymd("2020-03-04")+days(c(0:34))
+
+cases<-as.xts(TX_c,order.by = datesc)
+deaths<-as.xts(TX_d,order.by = datesd)
+
+```
+
+
+
+
+
+```{r shiny series, echo=F}
+inputPanel(
+  selectInput("CountyName", label = "Choose a county: ",
+              choices = colnames(cases), selected = "Total")
+)
+
+renderPlot({
+  ggplot(data)+aes(x=dates)+
+    # geom_col(aes(y=cases),fill="blue",colour="blue",alpha=.2)+
+    # geom_col(aes(y=deaths),fill="red",colour="red",alpha=.2)+
+    geom_col(aes(y=cases),colour="blue",alpha=.2)+
+    geom_col(aes(y=deaths),colour="red",alpha=.2)+
+    scale_fill_manual(values=c("blue","red"),labels=c("Cases","Deaths"),name="Legend")
+})
+renderText({
+  data<-cbind(cases[,colnames(cases)==input$CountyName],
+              deaths[,colnames(deaths)==input$CountyName])
+  data<-cbind('dates'=index(data),as.data.frame(data))
+  colnames(data)<-c("dates","cases","deaths")
+  cleaned<-na.omit(data)
+  cleaned$cases<-log(cleaned$cases)
+  cleaned$deaths<-log(cleaned$deaths)
+  cleaned<-cleaned[is.finite(rowSums(cleaned[,2:3])),]
+  s<-summary(lm(cleaned$cases~c(1:dim(cleaned)[1])))
+  mys<-s$coefficients[2,1]
+  myi<-s$coefficients[1,1]
+  paste(mys)
+})
+
+renderPlot({
+  ggplot(data)+aes(x=dates)+
+    geom_col(aes(y=log(cases)),fill="blue",colour="blue",alpha=.2)+
+    geom_col(aes(y=log(deaths)),fill="red",colour="red",alpha=.2)+
+    geom_abline(slope= mys, intercept = myi,colour<-"black")+
+    scale_fill_manual(labels=c("Cases","Deaths"))
+})
+
+renderText({
+  paste0("Regression of Log Case Counts on Days Since First Case")
+  # paste0("Y-intercept = ",s$coefficients[1,1])
+  # paste0("Slope = ",s$coefficients[2,1])
+  # paste0("R^2 = ",s$r.squared)
+})
+renderTable({
+  s$coefficients
+})
+```
+
+```{r}
+a<-"Harris"
+data<-cbind(cases[,colnames(cases)==a],
+            deaths[,colnames(deaths)==a])
+data<-cbind('dates'=index(data),as.data.frame(data))
+colnames(data)<-c("dates","cases","deaths")
+ggplot(data)+aes(x=dates)+
+  geom_col(aes(y=cases),fill="blue",colour="blue",alpha=.2)+
+  geom_col(aes(y=deaths),fill="red",colour="red",alpha=.2)
+
+
+
+
+
+cleaned<-na.omit(data)
+cleaned$cases<-log(cleaned$cases)
+cleaned$deaths<-log(cleaned$deaths)
+cleaned<-cleaned[is.finite(rowSums(cleaned[,2:3])),]
+s<-summary(lm(cleaned$cases~c(1:dim(cleaned)[1])))
+paste0("Regression of Log Case Counts on Days Since First Case")
+paste0("Y-intercept = ",s$coefficients[1,1])
+paste0("Slope = ",s$coefficients[2,1])
+paste0("R^2 = ",s$r.squared)
+
+```
+
+
+
+```{r eval=FALSE, include=FALSE}
+head(countypop)
+head(US_c)
+head(US_d)
+cases<-t(US_c[,12:89])
+colnames(cases)<-c(US_c$UID)
+dates<-ymd("2020-01-22")+days(0:(dim(US_c)[2]-12))
+
+cases<-as.xts(cases,order.by = dates)
+
+TX_sub<-cases[,substr(cases$FIPS,1,3)]
+
+```
+
+
+
+
+
+
+
+
+
+
