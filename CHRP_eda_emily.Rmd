@@ -56,6 +56,32 @@ deaths<-as.xts(TX_d,order.by = datesd)
 ```
 
 
+```{r}
+getCasesDeaths <- function(cases,deaths,county){
+  data<-cbind(cases[,colnames(cases)==county],
+              deaths[,colnames(deaths)==county])
+  data<-cbind('dates'=index(data),as.data.frame(data))
+  colnames(data)<-c("dates","cases","deaths")
+  return(data)
+}
+
+getRegressionCoeff <- function(data){
+  cleaned<-na.omit(data)
+  cleaned$cases<-log(cleaned$cases)
+  cleaned$deaths<-log(cleaned$deaths)
+  cleaned<-as.data.frame(cleaned[is.finite(rowSums(cleaned[,2:3])),])
+  if (!prod(dim(cleaned))){
+    return("ZERO")
+  }
+  s<-summary(lm(cleaned$cases~as.integer(cleaned$dates)))
+  output<-c(s$coefficients[1:2,1],s$r.squared)
+  s<-summary(lm(cleaned$deaths~as.integer(cleaned$dates)))
+  output<-cbind(output,c(s$coefficients[1:2,1],s$r.squared))
+  row.names(output)<-c('yint','slope','r2')
+  colnames(output)<-c('cases','deaths')
+  return(output)
+}
+```
 
 
 
@@ -66,34 +92,42 @@ inputPanel(
 )
 
 renderPlot({
+  data<-getCasesDeaths(cases,deaths,input$CountyName)
   ggplot(data)+aes(x=dates)+
     # geom_col(aes(y=cases),fill="blue",colour="blue",alpha=.2)+
     # geom_col(aes(y=deaths),fill="red",colour="red",alpha=.2)+
     geom_col(aes(y=cases),colour="blue",alpha=.2)+
     geom_col(aes(y=deaths),colour="red",alpha=.2)+
-    scale_fill_manual(values=c("blue","red"),labels=c("Cases","Deaths"),name="Legend")
+    scale_fill_manual(values=c("blue","red"),labels=c("Cases","Deaths"),name="Legend")+
+    xlab("Dates")+
+    ylab("Count")+
+    ggtitle("Cases (blue) and Deaths (red) by Day")
 })
-renderText({
-  data<-cbind(cases[,colnames(cases)==input$CountyName],
-              deaths[,colnames(deaths)==input$CountyName])
-  data<-cbind('dates'=index(data),as.data.frame(data))
-  colnames(data)<-c("dates","cases","deaths")
-  cleaned<-na.omit(data)
-  cleaned$cases<-log(cleaned$cases)
-  cleaned$deaths<-log(cleaned$deaths)
-  cleaned<-cleaned[is.finite(rowSums(cleaned[,2:3])),]
-  s<-summary(lm(cleaned$cases~c(1:dim(cleaned)[1])))
-  mys<-s$coefficients[2,1]
-  myi<-s$coefficients[1,1]
-  paste(mys)
-})
+# renderText({
 
+
+#   paste(mys)
+# })
 renderPlot({
-  ggplot(data)+aes(x=dates)+
+  data<-getCasesDeaths(cases,deaths,input$CountyName)
+  coeffs<-getRegressionCoeff(data)
+  if(coeffs=="ZERO"){
+    ggplot(data)+aes(x=dates)+
     geom_col(aes(y=log(cases)),fill="blue",colour="blue",alpha=.2)+
     geom_col(aes(y=log(deaths)),fill="red",colour="red",alpha=.2)+
-    geom_abline(slope= mys, intercept = myi,colour<-"black")+
     scale_fill_manual(labels=c("Cases","Deaths"))
+  }else{
+    ggplot(data)+aes(x=dates)+
+    geom_col(aes(y=log(cases)),fill="blue",colour="blue",alpha=.2)+
+    geom_col(aes(y=log(deaths)),fill="red",colour="red",alpha=.2)+
+    geom_abline(slope= coeffs[2,1], intercept = coeffs[1,1],colour="blue")+
+    geom_abline(slope= coeffs[2,2], intercept = coeffs[1,2],colour="red")+
+    scale_fill_manual(labels=c("Cases","Deaths"))+
+    xlab("Dates")+
+    ylab("Count")+
+    ggtitle("Logged Cases (blue) and Deaths (red) by Day")
+  }
+  
 })
 
 renderText({
@@ -122,14 +156,34 @@ ggplot(data)+aes(x=dates)+
 
 
 cleaned<-na.omit(data)
-cleaned$cases<-log(cleaned$cases)
-cleaned$deaths<-log(cleaned$deaths)
-cleaned<-cleaned[is.finite(rowSums(cleaned[,2:3])),]
+logcases<-log(cleaned$cases)
+  logdeaths<-log(cleaned$deaths)
+  cleaned<-cbind(cases=logcases,deaths=logdeaths)
+  cleaned<-as.data.frame(cleaned[is.finite(rowSums(cleaned)),])
+  colnames(cleaned)<-c('cases','deaths')
 s<-summary(lm(cleaned$cases~c(1:dim(cleaned)[1])))
 paste0("Regression of Log Case Counts on Days Since First Case")
 paste0("Y-intercept = ",s$coefficients[1,1])
 paste0("Slope = ",s$coefficients[2,1])
 paste0("R^2 = ",s$r.squared)
+
+
+
+data<-getCasesDeaths(cases,deaths,"Harris")
+coeffs<-getRegressionCoeff(data)
+    
+    # slopes <- coeffs[2,]*4/(4*365+1)
+    slopes <- coeffs[2,]
+    # ints <- coeffs[1,] -slopes*as.integer(as.integer(ymd("2020-03-02")))
+    ints <- coeffs[1,]
+  ggplot(data)+aes(x=dates)+
+    geom_col(aes(y=log(cases)),fill="blue",colour="blue",alpha=.2)+
+    geom_col(aes(y=log(deaths)),fill="red",colour="red",alpha=.2)+
+    # geom_abline(slope= coeffs[2,1], intercept = coeffs[1,1],colour="blue")+
+    # geom_abline(slope= coeffs[2,2], intercept = coeffs[1,2],colour="blue")+
+    geom_abline(slope= slopes[1], intercept = ints[1],colour="blue")+
+    geom_abline(slope= slopes[2], intercept = ints[2],colour="red")+
+    scale_fill_manual(labels=c("Cases","Deaths"))
 
 ```
 
