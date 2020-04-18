@@ -1,5 +1,5 @@
 ---
-title: "Analysis of Case and Death Count Growth Rates in Texas Counties"
+title: "Analysis of Case and Death Count Exponential Rates in Texas Counties"
 author: "Emily Wang & Dileka Gunawardana"
 date: "4/17/2020"
 output: html_document
@@ -180,7 +180,7 @@ Assumption 1: Fatality rate of COVID-19 is less variable between localities than
 
 Assumption 2: Fatality counts capture a higher percentage of total COVID-19 fatalities than case counts capture of total COVID-19 cases. (This is hypothesized to due to limited testing access for non-emergent patients.)
 
-Examining factors impacting growth rates in fatalities and case counts and the discrepancy between the two may inform bias correction for reporting in local communities.
+Examining factors impacting exponential rates in fatalities and case counts and the discrepancy between the two may inform bias correction for reporting in local communities.
 
 
 # Data
@@ -260,7 +260,7 @@ renderTable({
 ```
 
 # Regression of Log Cases and Log Deaths on Days
-Case and fatality counts both exhibit exponential growth, which can be quantified using the rate of change for the log of the counts. Regressing the logged counts against dates gives an average growth rate for each of the case and fatality curves. Below are the calculated growth rates for Texas counties for which there is non-zero data.
+Case and fatality counts both exhibit exponential growth, which can be quantified using the rate of change for the log of the counts. Regressing the logged counts against dates gives an estimated exponential rate for each of the case and fatality curves. Below are the calculated exponential rates for Texas counties for which there is non-zero data.
 
 ```{r shiny table, echo=F}
 renderTable({
@@ -271,7 +271,7 @@ renderTable({
 
 # Identifying Most Relevant Socioeconomic Factors
 
-After calculating the case and fatality growth rates for all 254 Texas counties, datasets containing socioeconomic data such as population demographics, income level, and poverty rates was found for each county. This information was then used in a regression analysis to identify which were most influential on the case and fatality growth rates.
+After calculating the case and fatality exponential rates for all 254 Texas counties, datasets containing socioeconomic data such as population demographics, income level, and poverty rates was found for each county. This information was then used in a regression analysis to identify which were most influential on the case and fatality exponential rates.
 
 To first visualize relationships between variables, a correlation matrix was plotted.
 
@@ -280,7 +280,7 @@ good.cor<-cor(good[,c(-1,-2,-5)])
 corrplot(good.cor)
 ```
 
-After experimentation the following models were found to best explain county-to-county variation in case count and fatality count growth rates.
+After experimentation the following models were found to best explain county-to-county variation in case count and fatality count exponential rates.
 
 $$CaseGR = log(CountyPopulation) + MedianHouseholdIncome+\epsilon $$
 
@@ -296,14 +296,14 @@ summary(lm(Cases ~ log(Total)+MedianHouseholdIncome,good))
 ```
 
 
-As theory would suggest, the fatality growth rate for each county was most affected by the log of the total population of the county itself (population is not normally distributed). The case growth rate, however, was additionally impacted by the Median Household Income of the county. This suggests income as a determining factor in the testing access and case reporting of a county.
+As theory would suggest, the fatality exponential rate for each county was most affected by the log of the total population of the county itself (population is not normally distributed). The case exponential rate, however, was additionally impacted by the Median Household Income of the county. This suggests income as a determining factor in the testing access and case reporting of a county.
 
 
 # Implications and Future Analysis
 
 The relationship between median household income and case reporting rates suggests that for counties with vastly different median household incomes, the case count data cannot be interpreted in the same way.
 For future analysis, it would be valuable to explore additional factors such as unemployment and population density in order to find a more deterministic model for creating a confidence interval of the true case counts for each county based on reported cases.
-The growth rate analysis and lag analysis would both benefit from a time-series approach as the pandemic progresses to advanced phases. As seen on the plot for Texas case and fatality counts, the growth rate has decreased over the last several days. Time-series modeling would better capture these changes, as well as when they occur.
+The exponential rate analysis and lag analysis would both benefit from a time-series approach as the pandemic progresses to advanced phases. As seen on the plot for Texas case and fatality counts, the exponential rate has decreased over the last several days. Time-series modeling would better capture these changes, as well as when they occur.
 
 
 
