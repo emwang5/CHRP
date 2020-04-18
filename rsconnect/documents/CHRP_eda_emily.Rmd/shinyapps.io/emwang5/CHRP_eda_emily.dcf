@@ -1,0 +1,13 @@
+name: CHRP_eda_emily
+title: CHRP_eda_emily
+username:
+account: emwang5
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 2139796
+bundleId: 3030586
+url: https://emwang5.shinyapps.io/CHRP_eda_emily/
+when: 1587202644.59863
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: TXcounties_cases.csv|TXcounties_fatalities.csv
