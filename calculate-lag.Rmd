@@ -18,7 +18,7 @@ According to a study, "Predicition and Analysis of Coronavirus Disease 2019" by 
 via a logistic regression. According to a study, "Estimates of the Severity of Coronavirus Disease 2019: a Model-Based Analysis" 
 by  Verity et. al (https://www.thelancet.com/action/showPdf?pii=S1473-3099%2820%2930243-7), the average length of time from the 
 onset of symptoms to death was relatively consistent - a 95% confidence interval from 16.9 - 19.2 days with a mean of 17.8 days. 
-However, a Canadian epidimiologist, Dr. David Fisman more recently claimed that period might be closer to 30 days. 
+However, a Canadian epidemiologist, Dr. David Fisman more recently claimed that period might be closer to 30 days. 
 
 When examining a typical COVID-19 patient who, unfortunately, passes away, the following timeline can be constructed: 
 

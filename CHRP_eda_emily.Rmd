@@ -1,13 +1,19 @@
 ---
-title: "CHRP_EDA"
-author: "Emily Wang"
-date: "4/9/2020"
+title: "Analysis of Case and Death Count Growth Rates in Texas Counties"
+author: "Emily Wang & Dileka Gunawardana"
+date: "4/17/2020"
 output: html_document
 runtime: shiny
+resource_files:
+- data/TXcounties_cases.csv
+- data/TXcounties_fatalities.csv
+- data/TX_demog.csv
+- data/UID_ISO_FIPS_LookUp_Table.csv
+- data/ResultsGrid_ExportData.csv
 ---
 
 
-```{r message=FALSE, warning=FALSE}
+```{r imports, message=FALSE, warning=FALSE, echo=F}
 # I have no idea what i'm doing
 library(xts)
 library(lubridate)
@@ -15,48 +21,54 @@ library(astsa)
 library(tidyverse)
 library(ggplot2)
 library(dplyr)
-setwd("C:/Users/emily/github/CHRP") #Set current working directory
+library(corrplot)
+# setwd("C:/Users/emily/github/CHRP") #Set current working directory
 datadir<-"data/" #Data subfolder, if needed
 ```
 
-```{r data import, include=FALSE}
-countypop<-read.csv(paste0(datadir,"co-est2019-alldata.csv"))
-US_c<-read.csv(paste0(datadir,"time_series_covid19_confirmed_US.csv"))
-US_d<-read.csv(paste0(datadir,"time_series_covid19_deaths_US.csv"))
+```{r data import, include=FALSE, echo=F}
+# countypop<-read.csv(paste0(datadir,"co-est2019-alldata.csv"))
+# US_c<-read.csv(paste0(datadir,"time_series_covid19_confirmed_US.csv"))
+# US_d<-read.csv(paste0(datadir,"time_series_covid19_deaths_US.csv"))
+incomepov<-read.csv(paste0(datadir,"ResultsGrid_ExportData.csv"))
 UID_lookup<-read.csv(paste0(datadir,"UID_ISO_FIPS_LookUp_Table.csv"))
 TX_c<-read.csv(paste0(datadir,"TXcounties_cases.csv"))
 TX_d<-read.csv(paste0(datadir,"TXcounties_fatalities.csv"))
+# TX_c<-read.csv(paste0("TXcounties_cases.csv"))
+# TX_d<-read.csv(paste0("TXcounties_fatalities.csv"))
+TX_demo<-read.csv(paste0(datadir,"TX_demog.csv"))
 ```
 
-https://www.arcgis.com/apps/opsdashboard/index.html#/bda7594740fd40299423467b48e9ecf6
-https://github.com/CSSEGISandData/COVID-19
-
-
-TX Demographics data: https://demographics.texas.gov/Data/TPEPP/Estimates/
-TX case data: https://dshs.texas.gov/coronavirus/
-
-```{r preprocessing, include=FALSE}
+```{r preprocessing, include=FALSE, echo=F}
 colnames(TX_c)[1]<-"CountyName"
 colnames(TX_d)[1]<-"CountyName"
 numc<-dim(TX_c)[2]
+# TX_c$CountyName<-as.character(TX_c$CountyName)
 counties<-TX_c$CountyName
-TX_c<-t(TX_c[3:(numc)])
+TX_c<-t(TX_c[,3:numc])
 colnames(TX_c)<-counties
 
 numd<-dim(TX_d)[2]
-TX_d<-t(TX_d[3:(numd)])
+TX_d<-t(TX_d[,3:numd])
 colnames(TX_d)<-counties
 
-datesc<-ymd("2020-03-04")+days(c(0:2,5:9,11:34))
-datesd<-ymd("2020-03-04")+days(c(0:34))
+days<-numd-3
+datesc<-ymd("2020-03-04")+days(c(0:2,5:9,11:days))
+datesd<-ymd("2020-03-04")+days(c(0:days))
 
 cases<-as.xts(TX_c,order.by = datesc)
 deaths<-as.xts(TX_d,order.by = datesd)
 
+colnames(incomepov)<-c("County",
+                       "PerCapIncome",
+                       "TotalPersonalIncome",
+                       "MedianHouseholdIncome",
+                       "AverageAnnualPay",
+                       "PercentInPoverty",
+                       "PercentUnder18InPoverty")
 ```
 
-
-```{r}
+```{r func defs, echo=F}
 getCasesDeaths <- function(cases,deaths,county){
   data<-cbind(cases[,colnames(cases)==county],
               deaths[,colnames(deaths)==county])
@@ -69,26 +81,124 @@ getRegressionCoeff <- function(data){
   cleaned<-na.omit(data)
   cleaned$cases<-log(cleaned$cases)
   cleaned$deaths<-log(cleaned$deaths)
-  cleaned<-as.data.frame(cleaned[is.finite(rowSums(cleaned[,2:3])),])
-  if (!prod(dim(cleaned))){
+  ccases<-cleaned[is.finite(cleaned$cases),1:2]
+  cdeaths<-cleaned[is.finite(cleaned$deaths),c(1,3)]
+  # cleaned<-as.data.frame(cleaned[is.finite(rowSums(cleaned[,2:3])),])
+  if (dim(ccases)[1]<2 || dim(cdeaths)[1]<2){
     return("ZERO")
   }
-  s<-summary(lm(cleaned$cases~as.integer(cleaned$dates)))
+  s<-summary(lm(ccases$cases~as.integer(ccases$dates)))
   output<-c(s$coefficients[1:2,1],s$r.squared)
-  s<-summary(lm(cleaned$deaths~as.integer(cleaned$dates)))
+  s<-summary(lm(cdeaths$deaths~as.integer(cdeaths$dates)))
   output<-cbind(output,c(s$coefficients[1:2,1],s$r.squared))
   row.names(output)<-c('yint','slope','r2')
   colnames(output)<-c('cases','deaths')
   return(output)
 }
 ```
+<!-- https://www.arcgis.com/apps/opsdashboard/index.html#/bda7594740fd40299423467b48e9ecf6 -->
+<!-- https://github.com/CSSEGISandData/COVID-19 -->
+```{r regs, eval=T, echo=F, message=FALSE, warning=FALSE}
+# dim(UID_lookup[UID_lookup$Province_State=="Texas",5:6])
+# UID_lookup[UID_lookup$Province_State=="Texas",5:6][c(1,4:257),]
+# UID_lookup$Admin2[UID_lookup$Province_State=="Texas"][1]==""
+# UID_lookup$Admin2[UID_lookup$Province_State=="Texas"][4:257]==counties[1:254]
+counties<-colnames(cases)
+slopes<-data.frame(matrix(ncol = 4,nrow=0))
+columns<-c("FIPS","County","Cases","Deaths")
+for(c in 1:254){ #Counties + TX
+  # slopes<-rbind(slopes,c)
+  data<-getCasesDeaths(cases,deaths,colnames(cases)[c])
+  coeffs<-getRegressionCoeff(data)
+  FIPSc<-UID_lookup$FIPS[UID_lookup$Admin2==counties[c] & UID_lookup$Province_State=="Texas"]
+  if(coeffs!="ZERO"){
+    data<-as.data.frame(t(c(FIPSc,counties[c],coeffs[2,])))
+    colnames(data)<-columns
+    slopes<-rbind(slopes,data)
+  }else{
+    data<-as.data.frame(t(c(FIPSc,counties[c],NA,NA)))
+    colnames(data)<-columns
+    slopes<-rbind(slopes,data)
+  }
+}
+c<-255
+data<-getCasesDeaths(cases,deaths,colnames(cases)[c])
+coeffs<-getRegressionCoeff(data)
+FIPSc<-48000
+if(coeffs!="ZERO"){
+  data<-as.data.frame(t(c(FIPSc,counties[c],coeffs[2,])))
+  colnames(data)<-columns
+  slopes<-rbind(slopes,data)
+}else{
+  data<-as.data.frame(t(c(FIPSc,counties[c],NA,NA)))
+  colnames(data)<-columns
+  slopes<-rbind(slopes,data)
+}
+
+colnames(slopes)<-columns
+slopes$FIPS<-as.character(slopes$FIPS)
+slopes$County<-as.character(slopes$County)
+slopes$Cases<-as.numeric(as.character(slopes$Cases))
+slopes$Deaths<-as.numeric(as.character(slopes$Deaths))
+
+```
+
+```{r combining data, echo=F, eval=T, message=FALSE, warning=FALSE}
+good<-na.omit(slopes)
+good<-good[good$Deaths!=0,]
+good<-good[good$County!="Total",]
+good$FIPS2<-as.numeric(good$FIPS)-48000
+gooddemo<-TX_demo[TX_demo$Age=="All Ages" & TX_demo$FIPS %in% good$FIPS2,]
+colnames(gooddemo)<-colnames(TX_demo)
+
+cat<-c("Total",
+       "NH_White_Total",
+       "NH_Black_Total",
+       "NH_Asian_Total",
+       "NH_Other_Total",
+       "Hispanic_Total")
+
+good<-cbind(good,gooddemo[,colnames(gooddemo) %in% cat])
+good<-mutate(good,
+             NH_White_Ratio=NH_White_Total/Total,
+             NH_Black_Ratio=NH_Black_Total/Total,
+             NH_Asian_Ratio=NH_Asian_Total/Total,
+             NH_Other_Ratio=NH_Other_Total/Total,
+             Hispanic_Ratio=Hispanic_Total/Total)
 
 
+# install.packages("corrplot")
 
-```{r shiny series, echo=F}
+good<-cbind(good,incomepov[incomepov$County %in% good$County,-1])
+
+```
+
+# Overview
+Due to the limited testing resources available in most communities, the rate at which cases are reported does not reflect the true number of cases. This error varies greatly by community, making it difficult to qualify and interpret the case and fatality counts for their own localities. Our proposed analysis is based on the following 2 assumptions regarding reporting data.
+
+Assumption 1: Fatality rate of COVID-19 is less variable between localities than the proportion of true cases being reported.
+
+Assumption 2: Fatality counts capture a higher percentage of total COVID-19 fatalities than case counts capture of total COVID-19 cases. (This is hypothesized to due to limited testing access for non-emergent patients.)
+
+Examining factors impacting growth rates in fatalities and case counts and the discrepancy between the two may inform bias correction for reporting in local communities.
+
+
+# Data
+The majority of the data used for analysis come from the Texas Department of State Health Services's weekly updates to Daily Case Counts and Daily Fatality Counts by County. To analyze population composition effects, data on county population by age, sex, race/ethnicity was used from the Texas Demographic Center. Economic data regarding income and poverty levels was found via the Texas Association of Counties data portal. These datasets were combined on the USDA FIPS code lookup to identify counties, which are represented differently in the first two datasets.
+
+Texas Demographics data: https://demographics.texas.gov/Data/TPEPP/Estimates/
+
+Texas Case and Fatality data: https://dshs.texas.gov/coronavirus/additionaldata/
+
+USDA FIPS lookup: https://www.nrcs.usda.gov/wps/portal/nrcs/detail/national/home/?cid=nrcs143_013697
+
+Texas Association of Counties Economic Data: https://imis.county.org/iMIS/CountyInformationProgram/QueriesCIP.aspx?QueryMenuSelectedKeyctl01_TemplateBody_WebPartManager1_gwpciNewQueryMenuCommon_ciNewQueryMenuCommon=944eeb43-ff87-4dc8-bfc2-47d242e9f455
+
+# Visualizing Case and Fatality Counts by Day by County
+```{r shiny plotting, echo=F}
 inputPanel(
   selectInput("CountyName", label = "Choose a county: ",
-              choices = colnames(cases), selected = "Total")
+              choices = good$County, selected = "Harris")
 )
 
 renderPlot({
@@ -96,12 +206,12 @@ renderPlot({
   ggplot(data)+aes(x=dates)+
     # geom_col(aes(y=cases),fill="blue",colour="blue",alpha=.2)+
     # geom_col(aes(y=deaths),fill="red",colour="red",alpha=.2)+
-    geom_col(aes(y=cases),colour="blue",alpha=.2)+
-    geom_col(aes(y=deaths),colour="red",alpha=.2)+
-    scale_fill_manual(values=c("blue","red"),labels=c("Cases","Deaths"),name="Legend")+
+    geom_col(aes(y=cases),fill="blue",colour="blue",alpha=.2)+
+    geom_col(aes(y=deaths),fill="red",colour="red",alpha=.2)+
+    # scale_fill_manual(values=c("blue","red"),labels=c("Cases","Deaths"),name="Legend")+
     xlab("Dates")+
     ylab("Count")+
-    ggtitle("Cases (blue) and Deaths (red) by Day")
+    ggtitle(paste0("Texas Cases (blue) and Deaths (red) by Day, ",input$CountyName))
 })
 # renderText({
 
@@ -113,95 +223,88 @@ renderPlot({
   coeffs<-getRegressionCoeff(data)
   if(coeffs=="ZERO"){
     ggplot(data)+aes(x=dates)+
-    geom_col(aes(y=log(cases)),fill="blue",colour="blue",alpha=.2)+
-    geom_col(aes(y=log(deaths)),fill="red",colour="red",alpha=.2)+
-    scale_fill_manual(labels=c("Cases","Deaths"))
+      geom_col(aes(y=log(cases)),fill="blue",colour="blue",alpha=.2)+
+      geom_col(aes(y=log(deaths)),fill="red",colour="red",alpha=.2)
+    # scale_fill_manual(labels=c("Cases","Deaths"))
   }else{
     ggplot(data)+aes(x=dates)+
-    geom_col(aes(y=log(cases)),fill="blue",colour="blue",alpha=.2)+
-    geom_col(aes(y=log(deaths)),fill="red",colour="red",alpha=.2)+
-    geom_abline(slope= coeffs[2,1], intercept = coeffs[1,1],colour="blue")+
-    geom_abline(slope= coeffs[2,2], intercept = coeffs[1,2],colour="red")+
-    scale_fill_manual(labels=c("Cases","Deaths"))+
-    xlab("Dates")+
-    ylab("Count")+
-    ggtitle("Logged Cases (blue) and Deaths (red) by Day")
+      geom_col(aes(y=log(cases)),fill="blue",colour="blue",alpha=.2)+
+      geom_col(aes(y=log(deaths)),fill="red",colour="red",alpha=.2)+
+      geom_abline(slope= coeffs[2,1], intercept = coeffs[1,1],colour="blue")+
+      geom_abline(slope= coeffs[2,2], intercept = coeffs[1,2],colour="red")+
+      # scale_fill_manual(labels=c("Cases","Deaths"))+
+      xlab("Dates")+
+      ylab("Count")+
+      ggtitle(paste0("Texas Logged Cases (blue) and Deaths (red) by Day, ", input$CountyName))
   }
   
 })
-
+# 
 renderText({
-  paste0("Regression of Log Case Counts on Days Since First Case")
-  # paste0("Y-intercept = ",s$coefficients[1,1])
-  # paste0("Slope = ",s$coefficients[2,1])
-  # paste0("R^2 = ",s$r.squared)
+  data<-getCasesDeaths(cases,deaths,input$CountyName)
+  coeffs<-getRegressionCoeff(data)
+  if (coeffs!="ZERO"){
+    paste0("Regression of Log Case and Death Counts on Days")
+  }
 })
 renderTable({
-  s$coefficients
-})
+  data<-getCasesDeaths(cases,deaths,input$CountyName)
+  coeffs<-getRegressionCoeff(data)
+  if (coeffs!="ZERO"){
+    colnames(coeffs)<-c("Cases","Deaths")
+    rownames(coeffs)<-c("Y-Intercept","Slope","R^2")
+    coeffs
+  }
+}, rownames = T)
+
 ```
 
-```{r}
-a<-"Harris"
-data<-cbind(cases[,colnames(cases)==a],
-            deaths[,colnames(deaths)==a])
-data<-cbind('dates'=index(data),as.data.frame(data))
-colnames(data)<-c("dates","cases","deaths")
-ggplot(data)+aes(x=dates)+
-  geom_col(aes(y=cases),fill="blue",colour="blue",alpha=.2)+
-  geom_col(aes(y=deaths),fill="red",colour="red",alpha=.2)
+# Regression of Log Cases and Log Deaths on Days
+Case and fatality counts both exhibit exponential growth, which can be quantified using the rate of change for the log of the counts. Regressing the logged counts against dates gives an average growth rate for each of the case and fatality curves. Below are the calculated growth rates for Texas counties for which there is non-zero data.
+
+```{r shiny table, echo=F}
+renderTable({
+  good[,2:4]
+}, rownames = F, striped = T)
+```
 
 
+# Identifying Most Relevant Socioeconomic Factors
+
+After calculating the case and fatality growth rates for all 254 Texas counties, datasets containing socioeconomic data such as population demographics, income level, and poverty rates was found for each county. This information was then used in a regression analysis to identify which were most influential on the case and fatality growth rates.
+
+To first visualize relationships between variables, a correlation matrix was plotted.
+
+```{r corrmatrix, echo=F}
+good.cor<-cor(good[,c(-1,-2,-5)])
+corrplot(good.cor)
+```
+
+After experimentation the following models were found to best explain county-to-county variation in case count and fatality count growth rates.
+
+$$CaseGR = log(CountyPopulation) + MedianHouseholdIncome+\epsilon $$
+
+$$FatalityGR=log(CountyPopulation)+\epsilon$$
+
+```{r reg outputs, echo=F}
+
+summary(lm(Deaths ~ log(Total),good))
+summary(lm(Cases ~ log(Total)+MedianHouseholdIncome,good))
 
 
-
-cleaned<-na.omit(data)
-logcases<-log(cleaned$cases)
-  logdeaths<-log(cleaned$deaths)
-  cleaned<-cbind(cases=logcases,deaths=logdeaths)
-  cleaned<-as.data.frame(cleaned[is.finite(rowSums(cleaned)),])
-  colnames(cleaned)<-c('cases','deaths')
-s<-summary(lm(cleaned$cases~c(1:dim(cleaned)[1])))
-paste0("Regression of Log Case Counts on Days Since First Case")
-paste0("Y-intercept = ",s$coefficients[1,1])
-paste0("Slope = ",s$coefficients[2,1])
-paste0("R^2 = ",s$r.squared)
-
-
-
-data<-getCasesDeaths(cases,deaths,"Harris")
-coeffs<-getRegressionCoeff(data)
-    
-    # slopes <- coeffs[2,]*4/(4*365+1)
-    slopes <- coeffs[2,]
-    # ints <- coeffs[1,] -slopes*as.integer(as.integer(ymd("2020-03-02")))
-    ints <- coeffs[1,]
-  ggplot(data)+aes(x=dates)+
-    geom_col(aes(y=log(cases)),fill="blue",colour="blue",alpha=.2)+
-    geom_col(aes(y=log(deaths)),fill="red",colour="red",alpha=.2)+
-    # geom_abline(slope= coeffs[2,1], intercept = coeffs[1,1],colour="blue")+
-    # geom_abline(slope= coeffs[2,2], intercept = coeffs[1,2],colour="blue")+
-    geom_abline(slope= slopes[1], intercept = ints[1],colour="blue")+
-    geom_abline(slope= slopes[2], intercept = ints[2],colour="red")+
-    scale_fill_manual(labels=c("Cases","Deaths"))
 
 ```
 
 
+As theory would suggest, the fatality growth rate for each county was most affected by the log of the total population of the county itself (population is not normally distributed). The case growth rate, however, was additionally impacted by the Median Household Income of the county. This suggests income as a determining factor in the testing access and case reporting of a county.
 
-```{r eval=FALSE, include=FALSE}
-head(countypop)
-head(US_c)
-head(US_d)
-cases<-t(US_c[,12:89])
-colnames(cases)<-c(US_c$UID)
-dates<-ymd("2020-01-22")+days(0:(dim(US_c)[2]-12))
 
-cases<-as.xts(cases,order.by = dates)
+# Implications and Future Analysis
 
-TX_sub<-cases[,substr(cases$FIPS,1,3)]
+The relationship between median household income and case reporting rates suggests that for counties with vastly different median household incomes, the case count data cannot be interpreted in the same way.
+For future analysis, it would be valuable to explore additional factors such as unemployment and population density in order to find a more deterministic model for creating a confidence interval of the true case counts for each county based on reported cases.
+The growth rate analysis and lag analysis would both benefit from a time-series approach as the pandemic progresses to advanced phases. As seen on the plot for Texas case and fatality counts, the growth rate has decreased over the last several days. Time-series modeling would better capture these changes, as well as when they occur.
 
-```
 
 
 
